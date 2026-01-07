@@ -1,9 +1,11 @@
-*.Rhistory
+*
+!*.R
+!README.md
+!.gitignore
+.Rhistory
 .RData
 .Rproj.user
-*.pdf
-*.png
-.DS_Store
 *.rds
 *.RData
 *.Rdata
+.DS_Store
