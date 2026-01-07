@@ -1,6 +1,36 @@
+################################################################################
+# Experiment: Figure 4 - Type I error control and power
+#
+# Purpose:
+#   Generates Figure 4 from the paper showing rejection rates as a function of
+#   the effect size beta_2, comparing three inference approaches:
+#     - Saturated: uses truncated normal CDF conditioning on selection
+#     - Naive: ignores selection (classical inference)
+#     - Selective: Monte Carlo resampling with re-selection
+#
+#   The figure has two panels:
+#     - Left: Known variance
+#     - Right: Unknown variance (estimated from data)
+#
+# Setup:
+#   - p = 5 predictors
+#   - True coefficients: beta = [1, beta_2, 2, 0, 0.5]
+#   - Design: AR(1) correlation with rho = 0.5
+#   - n = 50 observations
+#   - Model selection via AIC
+#   - Tests H0: beta_2 = 0 (coefficient of second predictor)
+#
+# Output:
+#   - Side-by-side plots showing rejection rates with confidence bands
+#   - Horizontal line at nominal level (0.05)
+#
+# Note: Computation-intensive. Uses parallel processing via mclapply().
+#       Results can be loaded from 'my_vars_new.RData'.
+################################################################################
 
 source('source code.R')
-#load packages
+
+## --- Load required packages ---
 library(intervals)
 library(nleqslv)
 library(leaps)
@@ -18,7 +48,23 @@ library(ggplot2)
 library(dplyr)
 library(patchwork)
 
+## ============================================================================
+##  Main simulation function
+## ============================================================================
 
+## --- Function: selective_exp ---
+# Generates datasets and computes p-values under different approaches
+# Continues until obtaining p_samples replications where X2 is selected
+#
+# Arguments:
+#   b2: True value of beta_2 (coefficient being tested)
+#   n_samples: Sample size
+#   noise_level: Standard deviation of errors
+#   noise: 'known' or 'unknown' - whether to estimate variance
+#   p_samples: Number of replications to collect (where X2 is selected)
+#
+# Returns:
+#   List of three p-value vectors (saturated, naive, selective)
 selective_exp = function(b2,
                           n_samples = 50,
                           noise_level = 1,
@@ -38,24 +84,25 @@ selective_exp = function(b2,
     
     iteration = iteration + 1
     
-    p = 5 # num of columns in X
+    # ----- True model parameters -----
+    p = 5 # Number of predictors
     B = rep(0,p)
-    B[1]    = 1 
-    B[2]    = b2
+    B[1]    = 1     # Active coefficients
+    B[2]    = b2    # Effect size varied in experiment
     B[3]    = 2
-    B[4]    = 0
-    B[5]    = 0.5
+    B[4]    = 0     # Null coefficient
+    B[5]    = 0.5   # Active coefficient
     
     n = n_samples
     statistic <- "aic" #must be one of c("aic", "aicc", "bic")
     alpha = 0.05
     sigmaKnown=F#assume noise level sigma is unknown
     
-    #===Data generation==============
-    # correlation structure of X: AR(1) with rho = 0.5
+    # ----- Data generation -----
+    # Correlation structure: AR(1) with rho = 0.5
     cor_matrix=ar1_matrix(p, 0.5)
     
-    #generate data used in model fitting
+    # Generate training data for this iteration
     set.seed(iteration)
     
     X=MASS::mvrnorm(n = n, mu = rep(0, p), Sigma = cor_matrix)
@@ -65,7 +112,7 @@ selective_exp = function(b2,
     #generate a new data point
     new_x=MASS::mvrnorm(1, mu = rep(0, p), Sigma = cor_matrix)
     
-    #===Go through the information-based model selection procedure========
+    # ----- Best-subset model selection via information criterion -----
     all_vars <- c(paste("X", 1:p, sep=""))
     names(new_x)=all_vars
     
@@ -121,6 +168,7 @@ selective_exp = function(b2,
     all_compete_models=(matrix(unlist(z), ncol = p, byrow = F))==1
     selected = reg_summary$which[size,-1]
     
+    # ----- Only collect results if X2 (second predictor) was selected -----
     if (selected[2] == TRUE){
       
       if (noise == 'known'){
@@ -182,11 +230,14 @@ selective_exp = function(b2,
                p_list3))
 }
 
+## ============================================================================
+##  Run simulations across range of effect sizes
+## ============================================================================
 
-
+## --- Define grid of beta_2 values to test ---
 b_candidates <-  seq(-1.5,1.5,0.1)
 
-# how many cores to use:
+## --- Parallel computation setup ---
 ncores <- detectCores() - 2
 
 # run in parallel:
@@ -208,16 +259,12 @@ res_list1 <- mclapply(b_candidates, function(b) {
 
 res_list1
 
-
-# load precomputed result
+## --- Load precomputed results (optional, for speed) ---
 load('my_vars_new.RData')
 
-
-
-
-
-
-########################################Figure 4 known variance
+## ============================================================================
+##  Figure 4, Panel 1: Known Variance
+## ============================================================================
 
 # combine results into two vectors
 res_mat   <- do.call(rbind, res_list1)
@@ -333,10 +380,11 @@ p1 <- ggplot() +
   ggtitle("Variance Known")
 
 
-######################################################## Figure 4 unknown variance
+## ============================================================================
+##  Figure 4, Panel 2: Unknown Variance
+## ============================================================================
 
-
-# combine results into two vectors
+## --- Extract rejection rates from second simulation ---
 res_mat   <- do.call(rbind, res_list2)
 
 
@@ -443,7 +491,9 @@ p2 <- ggplot() +
   ggtitle("Variance Unknown")
 
 
-#################################### Final figure
+## ============================================================================
+##  Combine both panels into final Figure 4
+## ============================================================================
 
 (p1 | p2) + 
   plot_layout(guides = "collect") &

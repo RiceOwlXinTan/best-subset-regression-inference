@@ -1,6 +1,34 @@
+################################################################################
+# Experiment: Figures 2, 3, and 5 from the paper
+#
+# Purpose:
+#   Generates three key figures illustrating post-selection inference:
+#
+#   Figure 2: Null distributions under different inference methods
+#     - Shows how saturated, naive, and selective approaches differ
+#     - Visualizes density/mass functions for selected coefficients
+#
+#   Figure 3: Type I error control across effect sizes
+#     - Rejection rates as a function of beta_2
+#     - Compares known vs unknown variance settings
+#
+#   Figure 5: Conditional type I error by model selected
+#     - Stratifies rejection rates by which model was chosen
+#     - Demonstrates importance of conditioning on selection event
+#
+# Setup:
+#   - p = 10 predictors (true model has first 3 active)
+#   - Design: independent (Figure 2/3) or AR(1) with rho=0.5 (Figure 5)
+#   - Model selection via AIC
+#
+# Note: Heavy computation - uses parallel processing via mclapply().
+#       Precomputed results can be loaded from .rds files.
+################################################################################
+
 rm(list = ls())
 source('source code.R')
-#load packages
+
+## --- Load required packages ---
 library(intervals)
 library(nleqslv)
 library(leaps)
@@ -26,9 +54,14 @@ library(patchwork)
 library(fpp3)
 library(final)
 
+## ============================================================================
+##  SECTION 1: Single example data for Figure 2 null distributions
+## ============================================================================
+
 set.seed(4)
 
-p=10 # num of columns in X
+## --- Setup for single example dataset ---
+p=10 # Number of predictors
 B=rep(0,p)
 B[1:3]=1:3 #ground truth model: only the first 3 predictors have nonzero effect on y
 
@@ -99,9 +132,11 @@ z=expand.grid(rep(list(0:1),p))[-1,]
 all_compete_models=(matrix(unlist(z), ncol = p, byrow = F))==1
 selected = reg_summary$which[size,-1]
 
+## ============================================================================
+##  SECTION 2: Generate Figure 2 - Null distributions
+## ============================================================================
 
-
-
+## --- Test single p-value computation ---
 selective_P_classic_fast(X_dt = X,
                          y,
                          selected,
@@ -118,7 +153,8 @@ selective_P_classic_fast(X_dt = X,
 
 
 
-################################################################## Figure 2
+## --- Compute null distributions for selected coefficients ---
+# Grid: test 3 coefficients (1, 4, 5) x 2 variance settings (known/unknown)
 grid <- expand.grid(i = c(1,4,5), s = c(NA,1), KEEP.OUT.ATTRS = FALSE)
 
 res <- mclapply(seq_len(nrow(grid)), function(k) {
@@ -143,10 +179,11 @@ res <- mclapply(seq_len(nrow(grid)), function(k) {
 }, mc.cores = detectCores())
 
 
+## --- Save/load precomputed results ---
 #saveRDS(res,'pivot.rds')
 res = readRDS('pivot.rds')
 
-
+## --- Extract density curves for plotting ---
 sat_l <- lapply(res, `[[`, "p1")
 nai_l <- lapply(res, `[[`, "p2")
 sel_l <- lapply(res, `[[`, "p3")
@@ -230,10 +267,12 @@ p1
   theme(legend.position = "right")
 
 
-################################################################## Figure 3
+## ============================================================================
+##  SECTION 3: Generate Figure 3 - Type I error across effect sizes
+## ============================================================================
 
-
-
+## --- Main simulation function for Figure 3 ---
+# Generates data, selects model, computes p-values under different methods
 saturated_exp1 = function(b2,
                           n_samples = 50,
                           noise_level = 1,
@@ -423,12 +462,10 @@ saturated_exp1 = function(b2,
                p_list4))
 }
 
-# single result at the null
+## --- Test single run at null (beta_2 = 0) ---
 result = saturated_exp1(b = 0,n_sample = 50, p_samples = 100,  noise_level = 1)
 
-
-
-
+## --- Run simulations across range of beta_2 values ---
 b_candidates <-  seq(-1.5,1.5,0.1)
 
 
@@ -520,10 +557,13 @@ ggplot(df_long, aes(x = b, y = rejection, color = label, linetype = label)) +
 
 
 
-################################################################## Figure 5
+## ============================================================================
+##  SECTION 4: Generate Figure 5 - Conditional type I error by selected model
+## ============================================================================
 
-
-# Parallel version: collect until we have target_selected cases with X2 selected
+## --- Parallelized simulation function for Figure 5 ---
+# Collects replications conditional on selecting a specific predictor
+# More efficient than filtering post-hoc
 saturated_exp4_par <- function(b2, 
                                test = 4,
                                n = 30, 
@@ -693,22 +733,23 @@ saturated_exp4_par <- function(b2,
 
 
 
+## --- Run simulation (5000 replications conditional on X5 selected) ---
 result_n = saturated_exp4_par(b2 = 0, 
                               n = 50, 
                               target_selected = 5000,
                               noise_level = 1, 
                               chunk_size = 1000,
                               null_value = 0,
-                              test = 5,
+                              test = 5,       # Condition on X5 being selected
                               noise = 'known')
 
 result = result_n
 
+## --- Save/load precomputed results ---
 # saveRDS(result,'exp4.rds')
 result = readRDS('exp4.rds')
 
-
-# check model selection results
+## --- Examine distribution of selected models ---
 combos <- apply(result[[1]], 1, paste0, collapse = "")
 tab   <- sort(table(combos), decreasing = TRUE)
 tab
@@ -727,14 +768,16 @@ df <- data.frame(
 
 
 
-# derive the rejection rate and fill the figure
+## --- Compute rejection rates at different alpha levels ---
 mean(result[[2]]<0.01)
 mean(result[[3]]<0.05)
 mean(result[[4]]<0.1)
 
+## --- Construct Figure 5: rejection rates stratified by selected model ---
+# Manually entered values from simulation results
+# Format: c(condition, method, rejection_rate)
 
-# figure
-
+# Known variance results
 r1 = c('all','naive',     0.2692)
 r2 = c('all','saturated', 0.0604)
 r3 = c('all','selected',  0.071)
