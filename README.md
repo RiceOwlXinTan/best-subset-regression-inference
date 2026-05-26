@@ -1,4 +1,4 @@
-# Post-selection inference for linear regression (code for submission)
+# Post-selection inference for linear regression 
 
 This folder contains R scripts used to run the simulation experiments and the application example for a linear-regression post-selection inference project.
 
